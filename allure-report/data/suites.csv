@@ -1,0 +1,2 @@
+"DESCRIPTION","DURATION IN MS","NAME","PARENT SUITE","START TIME","STATUS","STOP TIME","SUB SUITE","SUITE","TEST CLASS","TEST METHOD"
+"As a user i want to be able to login using valid credentials","5236","Successful login with valid credentials","","Sun Nov 02 19:27:56 GMT 2025","passed","Sun Nov 02 19:28:01 GMT 2025","","","",""
