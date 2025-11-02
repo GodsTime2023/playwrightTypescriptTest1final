@@ -1,0 +1,26 @@
+{
+  "default": {
+    "defaultTimeout": 15000,
+    "paths": [
+      "src/features/*.feature"
+    ],
+    "publishQuiet": true,
+    "dryRun": false,
+    "requireModule": [
+      "ts-node/register"
+    ],
+    "require": [
+      "src/steps/*.ts",
+      "src/hooks/hooks.ts"
+    ],
+    "format": [
+      "progress", 
+      "json:reports/cucumber_report.json",
+      "allure-cucumberjs/reporter" 
+    ],
+      "formatOptions": {
+      "snippetInterface": "async-await",
+      "resultsDir": "./allure-results"
+    }
+  }
+}
