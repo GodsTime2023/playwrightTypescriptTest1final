@@ -36,7 +36,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
-
+/playwright-report/
+/reports/
 # Playwright
 node_modules/
 /test-results/
