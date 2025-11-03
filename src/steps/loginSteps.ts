@@ -1,23 +1,35 @@
+import { Given, When, Then, IWorld } from '@cucumber/cucumber';
+import { Page, expect } from '@playwright/test';
+import { LoginPage } from '../pages/LoginPage';
+import { ProductPage } from '../pages/ProductPage'; // Import the ProductPage
 
-    import { Given, When, Then, IWorld } from '@cucumber/cucumber';
-    import { Page, expect } from '@playwright/test';
+interface CustomWorld extends IWorld {
+    page: Page;
+    loginPage: LoginPage; 
+    productPage: ProductPage; // Add the ProductPage
+}
 
-    Given("I navigate to the login page", async function() {
-        await this.page.goto('https://www.saucedemo.com/');
-    });
+Given("I navigate to the login page", async function(this: CustomWorld) {
+    // Initialize Page Objects here, so they are available in subsequent steps
+    this.loginPage = new LoginPage(this.page);
+    this.productPage = new ProductPage(this.page);
+    
+    await this.loginPage.goto(); // Use the new goto method
+});
 
-    When("I enter valid username and password", async function(dataTable) {
-        const data = dataTable.hashes();
-        const { username, password } = data[0];
-        await this.page.fill("[id='user-name']", username);
-        await this.page.fill("[id='password']", password);
-    });
+When("I enter valid username and password", async function(this: CustomWorld, dataTable) {
+    const data = dataTable.hashes();
+    const { username, password } = data[0];
+    await this.loginPage.login(username, password);
+});
 
-    When("I click on the login button", async function() {
-        await this.page.click("[id='login-button']");
-    });
+When("I click on the login button", async function(this: CustomWorld) {
+    await this.loginPage.clickLogin();
+});
 
-    Then("I should be redirected to the product page", async function() {
-        await expect(this.page).toHaveURL('https://www.saucedemo.com/inventory.html');
-        await expect(this.page.locator('//span[@class="title"]')).toBeVisible();
-    });
+Then("I should be redirected to the product page", async function(this: CustomWorld, dataTable) {
+    const data = dataTable.hashes();
+    const { title } = data[0];
+    await expect(this.productPage.productTitle).toBeVisible();
+    await this.productPage.verifyProductPageLoaded(title); // Use the new verification method
+});

@@ -5,84 +5,106 @@ import { ContentType } from 'allure-js-commons';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// Using a dedicated directory for videos, which the context will use for temporary files
+const outputDir = path.join(process.cwd(), 'test-results', 'temp_videos');
+
 let browser: Browser;
 let context: BrowserContext;
+let page: Page; // Use a global page variable to simplify sharing and cleanup
 
-const outputDir = path.join(process.cwd(), 'test-results', 'videos');
+interface CustomWorld extends IWorld {
+    page: Page;
+    videoPath?: string; // To temporarily store the video path for the After hook
+}
 
-Before(async function (this: IWorld) {
+
+// --- HOOKS ---
+// -----------------------------------------------------------------------------------
+
+Before(async function (this: CustomWorld) {
     if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    browser = await chromium.launch({ headless: false });
-    context = await browser.newContext({ viewport: { width: 1280, height: 1080 },
-           recordVideo: {
-            dir: outputDir,
-        }
-     });
-    const page = await context.newPage();
+    // Load browser arguments from settings.json
+    const browserArgs = JSON.parse(fs.readFileSync('settings.json', 'utf-8')).browser.args;
 
-    this.page = page;
+    // 1. Launch Browser
+    browser = await chromium.launch({ 
+        headless: false, 
+        slowMo: 100,
+        ...browserArgs
+    });
+    
+    // 2. Create Context and Enable Video Recording
+    context = await browser.newContext({
+        viewport: { width: 1280, height: 1080 },
+        recordVideo: {
+             // CRITICAL: Playwright will create the video file in this directory.
+             dir: outputDir, 
+        }
+    });
+    
+    // 3. Create Page and Store Reference
+    page = await context.newPage();
+    this.page = page; // Store page in the World object for step definitions
 });
 
-After(async function (this: IWorld, scenario) {
-    const page = this.page; 
-    let videoPath: string | undefined; // Variable to store the video path
+// src/hooks/hooks.ts
+
+After(async function (this: CustomWorld, scenario) {
+    const page = this.page;
+    let videoPath: string | undefined; 
+    let videoBuffer: Buffer | undefined;
 
     try {
-        if (scenario.result?.status === Status.FAILED && page) {
+        if (scenario.result?.status === Status.FAILED) {
+            // --- 1. Get Screenshot and Video Path ---
             
-            // --- 1. Screenshot and Video Finalization ---
-            const video = page.video();
-            
-            if (video) {
-                // CRITICAL: Finalize video and get the path BEFORE reading the file.
-                // This makes the video file available.
-                videoPath = await video.path(); 
-            }
-            
-            // Capture and attach screenshot
+            // Capture and attach screenshot (Using this.attach() and allure.attachment() is redundant but works)
             const screenshot = await page.screenshot({ fullPage: true });
             this.attach(screenshot, 'image/png');
-            allure.attachment('Screenshot on failure', screenshot, ContentType.PNG);
+            allure.attachment('Screenshot on Failure', screenshot, ContentType.PNG); // Keep for extra assurance/Allure-specific linking
             
-            // --- 2. Video Attachment ---
-            if (videoPath && fs.existsSync(videoPath)) {
-                
-                // Read the file and attach
-                const videoBuffer = fs.readFileSync(videoPath);
-                allure.attachment('Video recording', videoBuffer, ContentType.WEBM); 
-                
-                // Clean up the temporary file after successful reading
-                await page.video()?.delete(); 
-                
-                console.log(`Video attached and deleted from temp location: ${videoPath}`);
-
-            } else if (scenario.result?.status === Status.FAILED) {
-                // Only log this error if the scenario actually failed
-                console.error('Video was expected but not found for attachment.');
+            // Get the video object BEFORE closing the page/context
+            const video = page.video();
+            if (video) {
+                videoPath = await video.path(); 
             }
         }
-
+        
     } catch (error) {
-        // Catch any error during the attachment/cleanup phase itself
-        console.error('CRITICAL HOOK ERROR: Failed during media attachment/cleanup logic.', error);
+        console.error('ERROR during media capture in After hook:', error);
         
     } finally {
-        // 💡 GUARANTEED CLEANUP BLOCK: This runs even if an error occurs above.
-        try {
-            if (page) {
-                await page.close();
+        // --- 2. Guaranteed Teardown ---
+        if (page) await page.close();
+        if (context) await context.close();
+        
+        // 3. Attach Video to Report (If path exists AND status failed)
+        if (scenario.result?.status === Status.FAILED && videoPath && fs.existsSync(videoPath)) {
+            try {
+                // Read the finalized video file
+                videoBuffer = fs.readFileSync(videoPath);
+                
+                // ⭐️ FIX: Use this.attach() instead of allure.attachment() 
+                // This ensures the attachment is recorded in the Cucumber JSON report.
+                this.attach(videoBuffer, ContentType.WEBM); 
+                
+                // You can still call allure.attachment() if your Allure reporter relies on it, 
+                // but this.attach is CRITICAL for Cucumber.
+                allure.attachment('Video Recording', videoBuffer, ContentType.WEBM); 
+
+                // CRITICAL: Manually delete the temporary file after attachment
+                fs.unlinkSync(videoPath);
+                console.log(`✅ Video attached to report and temporary file deleted: ${videoPath}`);
+
+            } catch (videoError) {
+                console.error(`FAILED to attach or delete video: ${videoPath}`, videoError);
             }
-            if (context) {
-                await context.close();
-            }
-            if (browser) {
-                await browser.close();
-            }
-        } catch (cleanupError) {
-            console.error('ERROR during browser/context closing:', cleanupError);
         }
+        
+        // 4. Close Browser
+        if (browser) await browser.close();
     }
 });
